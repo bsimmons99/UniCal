@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="google-signin-client_id" content="297395073290-tkea654v8o1urtpghp5d61k1ougtetl1.apps.googleusercontent.com">
+        <style>
+            .signin {
+                background-image: url("/assets/btn_google_signin_dark_normal_web.png");
+                height: 46px;
+                width: 191px;
+            }
+            .signin:hover {
+                background-image: url("/assets/btn_google_signin_dark_focus_web.png");
+                cursor: pointer;
+            }
+            .signin-click {
+                background-image: url("/assets/btn_google_signin_dark_pressed_web.png");
+                cursor: pointer;
+                height: 46px;
+                width: 191px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="signin" onmousedown="this.className='signin-click'" onmouseup="this.className='signin'"></div>
+        
+        <div class="g-signin2" data-onsuccess="console.log('Signed in')"></div>
+        <script src="https://apis.google.com/js/platform.js" async defer></script>
+    </body>
+</html>

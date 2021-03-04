@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Uni Calendar Sync</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6PKRSY8E20"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-6PKRSY8E20');
+    </script>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <h1>University of Adelaide Timetable/Calnedar Sync (Unofficial)</h1>
+        Step 1: Login to <a href="https://tt.openshift.services.adelaide.edu.au/" target="_blank">https://tt.openshift.services.adelaide.edu.au/</a><br>
+        Step 2: Goto <a href="https://tt.openshift.services.adelaide.edu.au/api/timetable" target="_blank">https://tt.openshift.services.adelaide.edu.au/api/timetable</a>
+        and copy all the code (this is your timetable) [Ctrl+A, Ctrl+C]<br>
+        Step 3: Paste your timetable code here: [Ctrl+V]<br>
+        <textarea rows="15" cols="90" v-model="timetable" v-bind:disabled="startedAdding"></textarea><br>
+        <pre v-show="timetable && !timetableJson">There was an error reading your timetable, try copying it again?</pre>
+        <!-- Google Sign In/Out Buttons -->
+        Step 4: <button id="authorize_button" style="display: none;">Login to Google Account</button><span v-show="!googleActive">Login to Google Account</span>
+        <button id="signout_button" style="display: none;">Logout of Google Account</button><br>
+        <!-- Add Events Button -->
+        Step 5: <button v-on:click="createCal" v-bind:disabled="startedAdding || allDone || !googleSignedIn || !calSearchComplete || !timetableJson">Add Events</button>
+        <span v-show="detectedCal && !allDone && !startedAdding">A Course Timetable calendar was detected, this will create a new calendar. You should delete the old one first!</span>
+        <span v-show="startedAdding && !allDone">Working...</span><br>
+        <span v-show="allDone">All Completed! Be sure to sync again if you make timetable changes.</span><br>
+        
+        <!-- Errors -->
+        <div style="border-style: solid;" v-show="errY && (calRes || evtRes || delRes)">
+            <h3>Error Messages</h3>
+            <h4>Calendar Create:</h4>
+            <pre>{{calRes}}</pre><br>
+            <h4>Calendar Delete:</h4>
+            <pre>{{delRes}}</pre><br>
+            <h4>Event Create:</h4>
+            <pre>{{evtRes}}</pre><br>
+        </div>
+
+        <!-- Timetable Preview -->
+        <h2>Timetable Preview</h2>
+        <table>
+            <tr>
+                <th>Course</th>
+                <th>Type</th>
+                <th>Date</th>
+            </tr>
+            <tr v-for="event in timetableJson">
+                <td>{{event.course}}</td>
+                <td>{{event.type}}</td>
+                <td>{{event.date}} {{event.start_time}}-{{event.end_time}}</td>
+            </tr>
+        </table>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/vue"></script> -->
+    <script>
+        var app = new Vue({
+            el: '#app',
+            data: {
+                timetable: '',
+                entryEnabled: true,
+                googleSignedIn: false,
+                calRes: null,
+                evtRes: null,
+                delRes: null,
+                calId: null,
+                errY: false,
+                allDone: false,
+                detectedCal: false,
+                googleActive: false,
+                calSearchComplete: false,
+                startedAdding: false, 
+                devMode: false
+            },
+            computed: {
+                timetableJson: function () {
+                    try {
+                        return JSON.parse(this.timetable);
+                    } catch (error) {
+                        return false;
+                    }
+                }
+            },
+            methods: {
+                createCal: function () {
+                    console.log('Creating Calendar');
+                    this.startedAdding = true;
+                    gapi.client.calendar.calendars.insert({
+                        'summary': 'Course Timetable',
+                        'description': 'University of Adelaide Course Timetable\nDo not remove code: 5050431f0f491fdb'
+                    }).then(function (res) {
+                        console.log('Created');
+                        app.calRes = res;
+                        app.calId = res.result.id;
+                        app.addEvents();
+                    }, function (res) {
+                        app.calRes = res;
+                        app.errY = true;
+                        // gtag('event', 'cal_api_error', {'action': 'create_cal'});
+                        gtag('event', 'exception', {'description': 'create_cal', 'fatal': true});
+                    });
+                },
+                addEvents: function () {
+                    console.log('Adding Events');
+                    let batch = gapi.client.newBatch();
+                    this.timetableJson.forEach(element => {
+                        let event = {
+                            'summary': element.course + ' - ' + element.type,
+                            'location': element.building + ', '  + element.facility_description + ' ' + element.room + ' - ' + element.campus,
+                            'description': element.course + ' (' + element.course_id + ')',
+                            'start': {
+                                'dateTime': element.date + 'T' + element.start_time + ':00',
+                                'timeZone': 'Australia/Adelaide'
+                            },
+                            'end': {
+                                'dateTime': element.date + 'T' + element.end_time + ':00',
+                                'timeZone': 'Australia/Adelaide'
+                            }
+                        };
+                        batch.add(gapi.client.calendar.events.insert({
+                            'calendarId': app.calId,
+                            'resource': event
+                        }));
+                    });
+                    batch.then(function (res) {
+                        console.log('Added');
+                        app.evtRes = res;
+                        app.allDone = true;
+                        gtag('event', 'cal_api_complete');
+                    }, function (res) {
+                        console.log('Failed Adding');
+                        app.evtRes = res;
+                        app.errY = true;
+                        // gtag('event', 'cal_api_error', {'action': 'add_events'});
+                        gtag('event', 'exception', {'description': 'add_events', 'fatal': true});
+                    });
+                },
+                deleteEvents: function() {
+                    let batch = gapi.client.newBatch();
+                }
+            }
+        });
+        const urlParams = new URLSearchParams(window.location.search);
+        app.devMode = urlParams.get('dev') !== null;
+        console.log("devMode", app.devMode);
+
+
+        // --------------
+        // GOOGLE SIGN IN
+        // --------------
+        // Client ID and API key from the Developer Console
+        var CLIENT_ID = '297395073290-tkea654v8o1urtpghp5d61k1ougtetl1.apps.googleusercontent.com';
+        var API_KEY = 'AIzaSyBEsM8EFVpXh4pWWEgwwklHzajyTJGISkM';
+
+        // Array of API discovery doc URLs for APIs used by the quickstart
+        var DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"];
+
+        // Authorization scopes required by the API; multiple scopes can be
+        // included, separated by spaces.
+        var SCOPES = "https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+
+        var authorizeButton = document.getElementById('authorize_button');
+        var signoutButton = document.getElementById('signout_button');
+
+        /**
+         *  On load, called to load the auth2 library and API client library.
+         */
+        function handleClientLoad() {
+            gapi.load('client:auth2', initClient);
+            
+        }
+
+        /**
+         *  Initializes the API client library and sets up sign-in state
+         *  listeners.
+         */
+        function initClient() {
+            gapi.client.init({
+                apiKey: API_KEY,
+                clientId: CLIENT_ID,
+                discoveryDocs: DISCOVERY_DOCS,
+                scope: SCOPES
+            }).then(function () {
+                // Listen for sign-in state changes.
+                gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+                // Handle the initial sign-in state.
+                updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+                authorizeButton.onclick = handleAuthClick;
+                signoutButton.onclick = handleSignoutClick;
+            }, function (error) {
+                // appendPre(JSON.stringify(error, null, 2));
+            });
+        }
+
+        /**
+         *  Called when the signed in status changes, to update the UI
+         *  appropriately. After a sign-in, the API is called.
+         */
+        function updateSigninStatus(isSignedIn) {
+            app.googleActive = true;
+            if (isSignedIn) {
+                authorizeButton.style.display = 'none';
+                signoutButton.style.display = 'inline';
+                app.googleSignedIn = true;
+                gtag('event', 'login', {method: 'Google'});
+                detectCalID();
+            } else {
+                authorizeButton.style.display = 'inline';
+                signoutButton.style.display = 'none';
+                app.googleSignedIn = false;
+                app.calId = null;
+                app.detectedCal = false;
+                app.calSearchComplete = false;
+            }
+        }
+
+        function detectCalID() {
+            console.log('Starting Calendar Detect');
+            gapi.client.calendar.calendarList.list().then(res => {
+                console.log('Searching Results');
+                res.result.items.forEach(e => {
+                    if ('description' in e && e.description.includes('5050431f0f491fdb')) {
+                        console.log('Found');
+                        app.detectedCal = true;
+                        app.calId = e.id;
+                    }
+                });
+                console.log('Done Searching');
+                app.calSearchComplete = true;
+            });
+        }
+
+        /**
+         *  Sign in the user upon button click.
+         */
+        function handleAuthClick(event) {
+            gapi.auth2.getAuthInstance().signIn();
+        }
+
+        /**
+         *  Sign out the user upon button click.
+         */
+        function handleSignoutClick(event) {
+            gapi.auth2.getAuthInstance().signOut();
+        }
+    </script>
+    <script async defer src="https://apis.google.com/js/api.js" onload="this.onload=function(){};handleClientLoad()"
+        onreadystatechange="if (this.readyState === 'complete') this.onload()">
+        </script>
+</body>
+
+</html>
